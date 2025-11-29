@@ -4,15 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from torch.distributions.normal import Normal
 
-# Inspired by OmniAnomaly (KDD ’19) and MA-VAE (Multi-head Attention-based VAE; arXiv:2309.02253)
-
-# Loss Function
-def loss_function(x, x_mean, x_logvar, z_mean, z_logvar, beta):
-    dist = Normal(x_mean, torch.exp(0.5 * x_logvar))
-    log_px = dist.log_prob(x).sum(dim=[1, 2])
-    recon = -log_px.mean()
-    kl = 0.5 * (torch.exp(z_logvar) + z_mean**2 - 1 - z_logvar).sum(dim=[1, 2]).mean()
-    return recon + beta * kl, recon, kl
+# Inspired by OmniAnomaly (KDD '19) and MA-VAE (Multi-head Attention-based VAE; arXiv:2309.02253)
 
 # Beta Scheduler
 class BetaScheduler:
@@ -31,9 +23,9 @@ class BetaScheduler:
         idx = (epoch - self.grace) % self.total
         return float(self.betas[idx])
     
-# Gaussian Noise 
+# Gaussian Noise (minimal for regularization)
 class GaussianNoise(nn.Module):
-    def __init__(self, std=0.01):
+    def __init__(self, std=0.001):  # Reduced from 0.01 for normalized data
         super().__init__()
         self.std = std
     def forward(self, x):
@@ -127,5 +119,4 @@ class VAE_BILSTM_MHA(nn.Module):
         kl = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
         kl_loss = kl.sum(dim=[1, 2]).mean()
         total = recon_loss + self.beta * kl_loss
-        return total, recon_loss, kl_loss
         return total, recon_loss, kl_loss

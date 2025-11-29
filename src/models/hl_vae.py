@@ -53,7 +53,7 @@ class HLVAE(nn.Module):
         enc_gl_out = 2 * enc_hidden_global[1]
         self.to_stats_g = nn.Sequential(
             nn.Linear(enc_gl_out, enc_gl_out // 2),
-            nn.PReLU(),
+            nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(enc_gl_out // 2, 2 * global_latent_dim),
         )
@@ -69,7 +69,7 @@ class HLVAE(nn.Module):
         enc_loc_out = 2 * enc_hidden_local
         self.to_stats_l = nn.Sequential(
             nn.Linear(enc_loc_out, enc_loc_out // 2),
-            nn.PReLU(),
+            nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(enc_loc_out // 2, 2 * local_latent_dim),
         )
@@ -91,7 +91,7 @@ class HLVAE(nn.Module):
         dec_out_dim = 2 * dec_hidden[1]
         self.to_recon = nn.Sequential(
             nn.Linear(dec_out_dim, dec_out_dim // 2),
-            nn.PReLU(),
+            nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(dec_out_dim // 2, 2 * n_leads),
         )
@@ -159,16 +159,24 @@ class HLVAE(nn.Module):
 
     def loss_function(self, x, x_mean, x_logvar, mu_l, logvar_l):
         """Standard interface - uses stored global latents"""
-        x_logvar = torch.clamp(x_logvar, min=-10.0, max=10.0)
-        dist = Normal(x_mean, torch.exp(0.5 * x_logvar))
-        log_px = dist.log_prob(x)
-        recon_loss = -log_px.sum(dim=[1, 2]).mean()
+        # Use MSE reconstruction loss (more stable than Gaussian NLL)
+        recon_loss = torch.nn.functional.mse_loss(x_mean, x, reduction='sum') / x.size(0)
+        
         # Use stored global latents
         mu_g, logvar_g = self._mu_g, self._logvar_g
+        
+        # Clamp for numerical stability
+        logvar_g = torch.clamp(logvar_g, min=-10.0, max=10.0)
+        logvar_l = torch.clamp(logvar_l, min=-10.0, max=10.0)
+        
+        # Global KL divergence
         kl_g = -0.5 * (1 + logvar_g - mu_g.pow(2) - logvar_g.exp())
         kl_g = kl_g.sum(dim=-1).mean()
+        
+        # Local KL divergence (sum over time and latent dims)
         kl_l = -0.5 * (1 + logvar_l - mu_l.pow(2) - logvar_l.exp())
-        kl_l = kl_l.sum(dim=-1).mean()
+        kl_l = kl_l.sum(dim=[1, 2]).mean()  # Fixed: sum over time and latent dims
+        
         # Combined KL for standard interface
         kl_loss = kl_g + kl_l
         total = recon_loss + self.beta_g * kl_g + self.beta_l * kl_l

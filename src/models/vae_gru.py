@@ -4,10 +4,9 @@ import torch.nn.functional as F
 from torch.nn import MultiheadAttention
 
 class VAE(nn.Module):
-    def __init__(self, n_leads: int, n_hidden: int = 64, n_latent: int = 8, n_layers: int = 2, beta: float = 0.01):
+    def __init__(self, n_leads: int, n_hidden: int = 256, n_latent: int = 32, n_layers: int = 2, beta: float = 0.01):
         super(VAE, self).__init__()
         self.name = 'VAE'
-        self.lr = 0.002
         self.beta = beta
         self.n_feats = n_leads
         self.n_hidden = n_hidden
@@ -20,17 +19,17 @@ class VAE(nn.Module):
         )
         self.encoder = nn.Sequential(
             nn.Linear(self.n_hidden, self.n_hidden),
-            nn.PReLU(),
-            #nn.Dropout(p=0.1),
+            nn.GELU(),
+            nn.Dropout(p=0.1),
             nn.Linear(self.n_hidden, self.n_hidden),
-            nn.PReLU(),
-            #nn.Dropout(p=0.1),
+            nn.GELU(),
+            nn.Dropout(p=0.1),
             nn.Linear(self.n_hidden, 2 * self.n_latent)
         )
         self.decoder = nn.Sequential(
             nn.Linear(self.n_latent, self.n_hidden),
-            nn.PReLU(),
-            #nn.Dropout(p=0.1),
+            nn.GELU(),
+            nn.Dropout(p=0.1),
             nn.Linear(self.n_hidden, 2 * self.n_feats)
         )
         self.attn = MultiheadAttention(embed_dim=self.n_hidden, num_heads=4, batch_first=True)
