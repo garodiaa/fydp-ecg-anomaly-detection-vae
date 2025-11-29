@@ -25,6 +25,10 @@ from models.vae_bilstm_mha import VAE_BILSTM_MHA
 from models.hl_vae import HLVAE
 from models.cae import CAE
 from models.ba_vae import BeatVAE
+from models.transformer_vae import TransformerVAE
+from models.diffusion_vae import DiffusionVAE
+from models.hierarchical_attention_vae import HierarchicalAttentionVAE
+from models.st_vae import ST_VAE
 import argparse
 import json
 
@@ -55,7 +59,11 @@ def train_epoch(model, dataloader, optimizer, device, model_type, desc="Train"):
             kl_loss = 0.0
         else:
             x_mean, x_logvar, mu, logvar, _, _ = model(x)
-            loss, recon_loss, kl_loss = model.loss_function(x, x_mean, x_logvar, mu, logvar)
+            # Handle DiffusionVAE which needs compute_diffusion parameter
+            if isinstance(model, DiffusionVAE):
+                loss, recon_loss, kl_loss = model.loss_function(x, x_mean, x_logvar, mu, logvar, compute_diffusion=True)
+            else:
+                loss, recon_loss, kl_loss = model.loss_function(x, x_mean, x_logvar, mu, logvar)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -84,7 +92,11 @@ def validate_epoch(model, dataloader, device, model_type, desc="Validate"):
                 kl_loss = 0.0
             else:
                 x_mean, x_logvar, mu, logvar, _, _ = model(x)
-                loss, recon_loss, kl_loss = model.loss_function(x, x_mean, x_logvar, mu, logvar)
+                # Handle DiffusionVAE which needs compute_diffusion parameter (but not during validation)
+                if isinstance(model, DiffusionVAE):
+                    loss, recon_loss, kl_loss = model.loss_function(x, x_mean, x_logvar, mu, logvar, compute_diffusion=False)
+                else:
+                    loss, recon_loss, kl_loss = model.loss_function(x, x_mean, x_logvar, mu, logvar)
             batch_size = x.size(0)
             total_loss  += loss.item() * batch_size
             total_recon += recon_loss.item() * batch_size
@@ -318,7 +330,7 @@ def save_comprehensive_json(args, model, history, train_ds_size, val_ds_size, sa
 
 def main():
     p = argparse.ArgumentParser(description='Train ECG anomaly detection models on PTB-XL')
-    p.add_argument('--model', type=str, choices=['vae_bilstm_attn', 'vae_gru', 'vae_bilstm_mha', 'hlvae', 'cae', 'ba_vae'], required=True, help='Model to train')
+    p.add_argument('--model', type=str, choices=['vae_bilstm_attn', 'vae_gru', 'vae_bilstm_mha', 'hlvae', 'cae', 'ba_vae', 'transformer_vae', 'diffusion_vae', 'ha_vae', 'st_vae'], required=True, help='Model to train')
     p.add_argument('--dataset', type=str, default='ptbxl', help='Dataset name (ptbxl only)')
     p.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
     p.add_argument('--batch_size', type=int, default=64, help='Batch size')
@@ -404,6 +416,60 @@ def main():
         model = BeatVAE(n_leads=12, latent_dim=args.latent_dim, beat_len=model_seq_len, 
                        enc_hidden=256, n_layers=2, dropout=0.1, beta=args.beta).to(device)
         print(f"   BeatVAE configured: beat_len={model_seq_len}, enc_hidden=256, layers=2, latent_dim={args.latent_dim}")
+    elif args.model == 'transformer_vae':
+        # Transformer-VAE: Self-attention based encoder/decoder
+        model = TransformerVAE(
+            n_leads=12,
+            seq_len=model_seq_len,
+            d_model=256,
+            nhead=8,
+            num_encoder_layers=4,
+            num_decoder_layers=4,
+            dim_feedforward=1024,
+            latent_dim=args.latent_dim,
+            beta=args.beta,
+            dropout=0.1
+        ).to(device)
+        print(f"   Transformer-VAE configured: seq_len={model_seq_len}, d_model=256, heads=8, layers=4+4, latent_dim={args.latent_dim}")
+    elif args.model == 'diffusion_vae':
+        # Diffusion-VAE: VAE with diffusion process
+        model = DiffusionVAE(
+            n_leads=12,
+            seq_len=model_seq_len,
+            hidden_dim=256,
+            latent_dim=args.latent_dim,
+            num_layers=2,
+            beta=args.beta,
+            diffusion_steps=100,
+            diffusion_weight=0.5,
+            dropout=0.1
+        ).to(device)
+        print(f"   Diffusion-VAE configured: seq_len={model_seq_len}, hidden_dim=256, diffusion_steps=100, latent_dim={args.latent_dim}")
+    elif args.model == 'ha_vae':
+        # Hierarchical Attention VAE: Per-lead + cross-lead attention
+        model = HierarchicalAttentionVAE(
+            n_leads=12,
+            seq_len=model_seq_len,
+            hidden_dim=128,
+            global_latent_dim=args.latent_dim,
+            local_latent_dim=args.latent_dim // 2,
+            num_heads=4,
+            beta=args.beta,
+            dropout=0.1
+        ).to(device)
+        print(f"   Hierarchical Attention VAE configured: seq_len={model_seq_len}, hidden_dim=128, heads=4, latent_dim={args.latent_dim}")
+    
+    elif args.model == 'st_vae':
+        # Spectral-Temporal Disentangled VAE: Time + Frequency domain
+        model = ST_VAE(
+            n_leads=12,
+            seq_len=model_seq_len,
+            latent_dim=args.latent_dim,
+            beta=args.beta,
+            freq_weight=0.3,
+            dropout=0.2
+        ).to(device)
+        print(f"   ST-VAE configured: seq_len={model_seq_len}, latent_dim={args.latent_dim}, freq_weight=0.3, beta={args.beta}")
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

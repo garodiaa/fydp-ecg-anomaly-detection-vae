@@ -27,6 +27,10 @@ from models.vae_bilstm_mha import VAE_BILSTM_MHA
 from models.hl_vae import HLVAE
 from models.cae import CAE
 from models.ba_vae import BeatVAE
+from models.transformer_vae import TransformerVAE
+from models.diffusion_vae import DiffusionVAE
+from models.hierarchical_attention_vae import HierarchicalAttentionVAE
+from models.st_vae import ST_VAE
 
 def load_model(model_name, weights_path, latent_dim, seq_len, device):
     """Load trained model from weights"""
@@ -45,6 +49,50 @@ def load_model(model_name, weights_path, latent_dim, seq_len, device):
     elif model_name == 'ba_vae':
         model = BeatVAE(n_leads=12, latent_dim=latent_dim, beat_len=seq_len, 
                        enc_hidden=256, n_layers=2, dropout=0.1, beta=0.3)
+    elif model_name == 'transformer_vae':
+        model = TransformerVAE(
+            n_leads=12,
+            seq_len=seq_len,
+            d_model=256,
+            nhead=8,
+            num_encoder_layers=4,
+            num_decoder_layers=4,
+            dim_feedforward=1024,
+            latent_dim=latent_dim,
+            dropout=0.1
+        )
+    elif model_name == 'diffusion_vae':
+        model = DiffusionVAE(
+            n_leads=12,
+            seq_len=seq_len,
+            hidden_dim=256,
+            latent_dim=latent_dim,
+            num_layers=2,
+            beta=0.3,
+            diffusion_steps=100,
+            diffusion_weight=0.5,
+            dropout=0.1
+        )
+    elif model_name == 'ha_vae':
+        model = HierarchicalAttentionVAE(
+            n_leads=12,
+            seq_len=seq_len,
+            hidden_dim=128,
+            global_latent_dim=latent_dim,
+            local_latent_dim=16,
+            num_layers=2,
+            num_heads=4,
+            dropout=0.1
+        )
+    elif model_name == 'st_vae':
+        model = ST_VAE(
+            n_leads=12,
+            seq_len=seq_len,
+            latent_dim=latent_dim,
+            beta=0.5,
+            freq_weight=0.3,
+            dropout=0.2
+        )
     else:
         raise ValueError(f"Unknown model: {model_name}")
     
@@ -116,7 +164,8 @@ def compute_metrics(y_true, y_pred, y_scores):
 def main():
     parser = argparse.ArgumentParser(description='Evaluate trained model on anomaly detection')
     parser.add_argument('--model', type=str, required=True, 
-                       choices=['vae_bilstm_attn', 'vae_gru', 'vae_bilstm_mha', 'hlvae', 'cae', 'ba_vae'],
+                       choices=['vae_bilstm_attn', 'vae_gru', 'vae_bilstm_mha', 'hlvae', 'cae', 'ba_vae',
+                               'transformer_vae', 'diffusion_vae', 'ha_vae', 'st_vae'],
                        help='Model to evaluate')
     parser.add_argument('--weights', type=str, default=None,
                        help='Path to model weights (default: src/weights/<model>_weights/best_model.pt)')
