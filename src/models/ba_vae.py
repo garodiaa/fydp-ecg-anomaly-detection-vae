@@ -28,21 +28,22 @@ class BeatVAE(nn.Module):
     def __init__(
         self,
         n_leads: int = 12,
-        beat_len: int = 400,
-        enc_hidden: int = 128,
-        n_layers: int = 1,
-        latent_dim: int = 16,
+        beat_len: int = 1000,
+        enc_hidden: int = 256,
+        n_layers: int = 2,
+        latent_dim: int = 32,
         beta: float = 0.01,
-        dropout: float = 0.05,
+        dropout: float = 0.1,
     ):
         """
         Args:
             n_leads: number of ECG leads (12)
-            beat_len: number of time samples per beat window (T)
-            enc_hidden: GRU hidden size
-            n_layers: GRU layers
-            latent_dim: latent dimensionality per-beat
+            beat_len: number of time samples per beat window (T=1000, matching other models)
+            enc_hidden: GRU hidden size (256 for better capacity)
+            n_layers: GRU layers (2 for deeper encoding)
+            latent_dim: latent dimensionality per-beat (32 for expressiveness)
             beta: KL weight
+            dropout: dropout rate for regularization
         """
         super().__init__()
         self.n_leads = n_leads
@@ -75,7 +76,11 @@ class BeatVAE(nn.Module):
         )
 
         # Decoder: map latent -> sequence
-        self.latent_to_init = nn.Linear(latent_dim, enc_hidden)
+        self.latent_to_init = nn.Sequential(
+            nn.Linear(latent_dim, enc_hidden),
+            nn.LayerNorm(enc_hidden),
+            nn.Tanh()
+        )
         self.gru_dec = nn.GRU(
             input_size=latent_dim, 
             hidden_size=enc_hidden, 
@@ -131,7 +136,7 @@ class BeatVAE(nn.Module):
         B = z.size(0)
         # Feed latent as repeated inputs across timesteps to GRU decoder
         z_in = z.unsqueeze(1).expand(-1, self.beat_len, -1)  # (B, T, latent_dim)
-        h0 = torch.tanh(self.latent_to_init(z)).unsqueeze(0)  # (1, B, H) with tanh activation
+        h0 = self.latent_to_init(z).unsqueeze(0)  # (1, B, H) with LayerNorm + Tanh
         d_seq, _ = self.gru_dec(z_in, h0)  # (B, T, H)
         
         # Apply layer norm
@@ -166,11 +171,12 @@ class BeatVAE(nn.Module):
 
     def loss_function(self, x, x_mean, x_logvar, mu, logvar, free_bits=0.0):
         """
-        Negative log-likelihood under Normal(x_mean, exp(0.5*x_logvar)) + beta * KL
+        MSE reconstruction loss + beta * KL divergence
+        Fixed: Use MSE instead of Gaussian NLL to prevent negative losses from high variance predictions
         Args:
             x: input (B, T, n_leads)
             x_mean: reconstruction mean (B, T, n_leads)
-            x_logvar: reconstruction log variance (B, T, n_leads)
+            x_logvar: reconstruction log variance (B, T, n_leads) - not used with MSE
             mu: latent mean (B, T, latent_dim) - will use first timestep
             logvar: latent log variance (B, T, latent_dim) - will use first timestep
             free_bits: minimum KL per dimension (helps prevent posterior collapse)
@@ -181,13 +187,10 @@ class BeatVAE(nn.Module):
         logvar = logvar[:, 0, :]  # (B, latent_dim)
         
         # Clamp for numerical stability
-        x_logvar = torch.clamp(x_logvar, min=-10.0, max=10.0)
         logvar = torch.clamp(logvar, min=-10.0, max=10.0)
         
-        # Reconstruction loss (negative log-likelihood)
-        dist = Normal(x_mean, torch.exp(0.5 * x_logvar) + 1e-6)
-        log_px = dist.log_prob(x)  # shape (B, T, n_leads)
-        recon_loss = -log_px.sum(dim=[1, 2]).mean()  # sum over time & leads, mean over batch
+        # Reconstruction loss - MSE (sum over all elements, divide by batch size)
+        recon_loss = F.mse_loss(x_mean, x, reduction='sum') / x.size(0)
 
         # KL divergence with free bits
         kl_per_dim = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())  # (B, latent_dim)

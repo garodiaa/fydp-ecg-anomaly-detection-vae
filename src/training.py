@@ -400,11 +400,10 @@ def main():
     elif args.model == 'cae':
         model = CAE(in_channels=12).to(device)
     elif args.model == 'ba_vae':
-        # BeatVAE: beat-aligned VAE with R-peak segmentation
-        # Default to 300 samples per beat (typical for 100Hz, ~60-80 bpm)
+        # BeatVAE: beat-aligned VAE with R-peak segmentation (improved architecture)
         model = BeatVAE(n_leads=12, latent_dim=args.latent_dim, beat_len=model_seq_len, 
-                       enc_hidden=128, n_layers=2, dropout=0.1, beta=args.beta).to(device)
-        print(f"   BeatVAE configured: beat_len={model_seq_len}, enc_hidden=128, bidirectional GRU")
+                       enc_hidden=256, n_layers=2, dropout=0.1, beta=args.beta).to(device)
+        print(f"   BeatVAE configured: beat_len={model_seq_len}, enc_hidden=256, layers=2, latent_dim={args.latent_dim}")
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

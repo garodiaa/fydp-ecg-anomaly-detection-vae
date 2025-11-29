@@ -60,4 +60,9 @@ class ECGDataset(Dataset):
             pad = torch.zeros(self.sample_length - L, C, dtype=sig.dtype)
             sig = torch.cat([sig, pad], dim=0)
 
+        # Z-score normalization per sample (critical for VAE training)
+        mean = sig.mean(dim=0, keepdim=True)
+        std = sig.std(dim=0, keepdim=True) + 1e-8  # Add epsilon to avoid division by zero
+        sig = (sig - mean) / std
+
         return sig

@@ -121,12 +121,11 @@ class VAE_BILSTM_MHA(nn.Module):
         return self.phase1(x)
     
     def loss_function(self, x, x_mean, x_logvar, mu, logvar):
-        """Unified loss function interface"""
-        x_logvar = torch.clamp(x_logvar, -10.0, 10.0)
-        dist = torch.distributions.Normal(x_mean, torch.exp(0.5 * x_logvar))
-        log_px = dist.log_prob(x).sum(dim=[1, 2]).mean()
-        recon_loss = -log_px
+        """Unified loss function interface - using MSE for stability"""
+        # Use MSE reconstruction loss (sum over all elements, divide by batch size)
+        recon_loss = F.mse_loss(x_mean, x, reduction='sum') / x.size(0)
         kl = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
         kl_loss = kl.sum(dim=[1, 2]).mean()
         total = recon_loss + self.beta * kl_loss
+        return total, recon_loss, kl_loss
         return total, recon_loss, kl_loss

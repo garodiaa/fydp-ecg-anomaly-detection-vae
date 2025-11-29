@@ -44,7 +44,7 @@ def load_model(model_name, weights_path, latent_dim, seq_len, device):
         model = CAE(in_channels=12)
     elif model_name == 'ba_vae':
         model = BeatVAE(n_leads=12, latent_dim=latent_dim, beat_len=seq_len, 
-                       enc_hidden=128, n_layers=2, dropout=0.1, beta=0.3)
+                       enc_hidden=256, n_layers=2, dropout=0.1, beta=0.3)
     else:
         raise ValueError(f"Unknown model: {model_name}")
     

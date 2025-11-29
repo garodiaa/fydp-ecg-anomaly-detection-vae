@@ -72,11 +72,8 @@ class VAE(nn.Module):
 
     # Loss function
     def loss_function(self, x: torch.Tensor, x_mean: torch.Tensor, x_logvar: torch.Tensor, mu: torch.Tensor, logvar: torch.Tensor):
-        min_logvar, max_logvar = -10.0, 10.0
-        x_logvar = torch.clamp(x_logvar, min=min_logvar, max=max_logvar)
-        dist = torch.distributions.Normal(x_mean, torch.exp(0.5 * x_logvar))
-        log_px = dist.log_prob(x).sum(dim=[1,2]).mean()  
-        recon_loss = -log_px
+        # Use MSE reconstruction loss (sum over all elements, divide by batch size)
+        recon_loss = F.mse_loss(x_mean, x, reduction='sum') / x.size(0)
         kl_per = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())  
-        kl_loss = kl_per.mean()
+        kl_loss = kl_per.sum(dim=[1, 2]).mean()
         return recon_loss + self.beta * kl_loss, recon_loss, kl_loss

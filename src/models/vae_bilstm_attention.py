@@ -123,14 +123,13 @@ class VAE(nn.Module):
     def loss_function(self, x, x_mean, x_logvar, mu, logvar):
         """
         Loss function for the VAE: reconstruction loss + KL divergence.
+        Fixed: Use MSE for reconstruction to prevent negative NLL from high variance predictions
         """
-        x_logvar = torch.clamp(x_logvar, -10.0, 10.0)
-        recon = -torch.distributions.Normal(
-            loc=x_mean, scale=torch.exp(0.5 * x_logvar)).log_prob(x)
-        recon_loss = recon.sum(dim=[1, 2]).mean()
+        # Use MSE reconstruction loss (sum over all elements, divide by batch size)
+        recon_loss = F.mse_loss(x_mean, x, reduction='sum') / x.size(0)
 
         kl = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
-        kl_loss = kl.mean()
+        kl_loss = kl.sum(dim=[1, 2]).mean()
 
         total = recon_loss + self.beta * kl_loss
         return total, recon_loss, kl_loss
