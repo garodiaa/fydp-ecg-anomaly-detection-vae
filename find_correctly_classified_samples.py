@@ -85,7 +85,7 @@ def find_correctly_classified_samples():
     # Strategy 2: Median of medians
     threshold_median = (np.median(normal_scores_only) + np.median(abnormal_scores_only)) / 2
     
-    # Strategy 3: Minimize error rate
+    # Strategy 3: Maximize balanced accuracy (get samples from both classes)
     thresholds_to_test = np.linspace(
         min(normal_scores_only.min(), abnormal_scores_only.min()),
         max(normal_scores_only.max(), abnormal_scores_only.max()),
@@ -93,27 +93,46 @@ def find_correctly_classified_samples():
     )
     
     best_threshold = None
-    best_accuracy = 0
+    best_metric = 0
     best_counts = None
     
     for thresh in thresholds_to_test:
         normal_correct = np.sum(normal_scores_only < thresh)
         abnormal_correct = np.sum(abnormal_scores_only >= thresh)
-        accuracy = (normal_correct + abnormal_correct) / (len(normal_scores_only) + len(abnormal_scores_only))
         
-        if accuracy > best_accuracy:
-            best_accuracy = accuracy
+        # Require at least 100 samples from each class
+        if normal_correct < 100 or abnormal_correct < 100:
+            continue
+        
+        # Use balanced accuracy to favor equal performance on both classes
+        normal_acc = normal_correct / len(normal_scores_only)
+        abnormal_acc = abnormal_correct / len(abnormal_scores_only)
+        balanced_acc = (normal_acc + abnormal_acc) / 2
+        
+        if balanced_acc > best_metric:
+            best_metric = balanced_acc
             best_threshold = thresh
             best_counts = (normal_correct, abnormal_correct)
+    
+    # If no threshold found with 100+ samples each, use median-based
+    if best_threshold is None:
+        print("WARNING: Could not find threshold with 100+ samples per class")
+        print("Using median-based threshold instead")
+        best_threshold = threshold_median
+        best_counts = (
+            np.sum(normal_scores_only < threshold_median),
+            np.sum(abnormal_scores_only >= threshold_median)
+        )
+        best_metric = (best_counts[0]/len(normal_scores_only) + best_counts[1]/len(abnormal_scores_only)) / 2
     
     print(f"Threshold options:")
     print(f"  Mean-based: {threshold_mean:.2f}")
     print(f"  Median-based: {threshold_median:.2f}")
-    print(f"  Optimal (max accuracy): {best_threshold:.2f} -> {best_accuracy*100:.2f}% accuracy")
+    print(f"  Balanced (100+ each): {best_threshold:.2f} -> {best_metric*100:.2f}% balanced accuracy")
     print(f"    Normal correct: {best_counts[0]}/{len(normal_scores_only)} ({100*best_counts[0]/len(normal_scores_only):.1f}%)")
     print(f"    Abnormal correct: {best_counts[1]}/{len(abnormal_scores_only)} ({100*best_counts[1]/len(abnormal_scores_only):.1f}%)")
     
-    # Use optimal threshold
+    # Use balanced threshold
     threshold = best_threshold
     print(f"\nUsing threshold: {threshold:.2f}")
     print("=" * 80)
@@ -184,13 +203,22 @@ def find_correctly_classified_samples():
         f.write("=" * 80 + "\n\n")
         f.write(f"Model: ST-VAE (Beta: {model.beta})\n")
         f.write(f"Threshold: {threshold:.2f}\n")
-        f.write(f"Overall Accuracy on Full Dataset: {best_accuracy*100:.2f}%\n\n")
-        f.write(f"Normal Samples: {n_normal}\n")
-        f.write(f"  Score Range: {selected_normal[0][1]:.2f} - {selected_normal[-1][1]:.2f}\n")
-        f.write(f"  All scores < {threshold:.2f} (correctly classified as normal)\n\n")
-        f.write(f"Abnormal Samples: {n_abnormal}\n")
-        f.write(f"  Score Range: {selected_abnormal[-1][1]:.2f} - {selected_abnormal[0][1]:.2f}\n")
-        f.write(f"  All scores >= {threshold:.2f} (correctly classified as abnormal)\n\n")
+        f.write(f"Overall Balanced Accuracy: {best_metric*100:.2f}%\n\n")
+        
+        if n_normal > 0:
+            f.write(f"Normal Samples: {n_normal}\n")
+            f.write(f"  Score Range: {selected_normal[0][1]:.2f} - {selected_normal[-1][1]:.2f}\n")
+            f.write(f"  All scores < {threshold:.2f} (correctly classified as normal)\n\n")
+        else:
+            f.write(f"Normal Samples: 0 (no correctly classified normal samples available)\n\n")
+        
+        if n_abnormal > 0:
+            f.write(f"Abnormal Samples: {n_abnormal}\n")
+            f.write(f"  Score Range: {selected_abnormal[-1][1]:.2f} - {selected_abnormal[0][1]:.2f}\n")
+            f.write(f"  All scores >= {threshold:.2f} (correctly classified as abnormal)\n\n")
+        else:
+            f.write(f"Abnormal Samples: 0 (no correctly classified abnormal samples available)\n\n")
+        
         f.write("Usage:\n")
         f.write("  - Normal samples are in normal/ subdirectory\n")
         f.write("  - Abnormal samples are in abnormal/ subdirectory\n")
@@ -212,21 +240,28 @@ def find_correctly_classified_samples():
     
     # Show statistics
     print("\nDEMO DATASET STATISTICS:")
-    print(f"Normal scores:")
-    print(f"  Min: {selected_normal[0][1]:.2f}")
-    print(f"  Max: {selected_normal[-1][1]:.2f}")
-    print(f"  Mean: {np.mean([s[1] for s in selected_normal]):.2f}")
-    print(f"  Std: {np.std([s[1] for s in selected_normal]):.2f}")
+    if n_normal > 0:
+        print(f"Normal scores:")
+        print(f"  Min: {selected_normal[0][1]:.2f}")
+        print(f"  Max: {selected_normal[-1][1]:.2f}")
+        print(f"  Mean: {np.mean([s[1] for s in selected_normal]):.2f}")
+        print(f"  Std: {np.std([s[1] for s in selected_normal]):.2f}")
+    else:
+        print(f"Normal scores: No samples available")
     
-    print(f"\nAbnormal scores:")
-    print(f"  Min: {selected_abnormal[-1][1]:.2f}")
-    print(f"  Max: {selected_abnormal[0][1]:.2f}")
-    print(f"  Mean: {np.mean([s[1] for s in selected_abnormal]):.2f}")
-    print(f"  Std: {np.std([s[1] for s in selected_abnormal]):.2f}")
+    if n_abnormal > 0:
+        print(f"\nAbnormal scores:")
+        print(f"  Min: {selected_abnormal[-1][1]:.2f}")
+        print(f"  Max: {selected_abnormal[0][1]:.2f}")
+        print(f"  Mean: {np.mean([s[1] for s in selected_abnormal]):.2f}")
+        print(f"  Std: {np.std([s[1] for s in selected_abnormal]):.2f}")
+    else:
+        print(f"\nAbnormal scores: No samples available")
     
-    print(f"\nSeparation:")
-    print(f"  Gap between classes: {selected_abnormal[-1][1] - selected_normal[-1][1]:.2f}")
-    print(f"  Ratio (abnormal/normal means): {np.mean([s[1] for s in selected_abnormal]) / np.mean([s[1] for s in selected_normal]):.3f}x")
+    if n_normal > 0 and n_abnormal > 0:
+        print(f"\nSeparation:")
+        print(f"  Gap between classes: {selected_abnormal[-1][1] - selected_normal[-1][1]:.2f}")
+        print(f"  Ratio (abnormal/normal means): {np.mean([s[1] for s in selected_abnormal]) / np.mean([s[1] for s in selected_normal]):.3f}x")
     print("=" * 80)
 
 if __name__ == "__main__":

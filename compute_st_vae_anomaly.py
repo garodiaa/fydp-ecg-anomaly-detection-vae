@@ -119,28 +119,41 @@ def compute_st_vae_reconstruction_and_anomaly(model, sig_np, window_size=1000, s
         return recon_mean_np, recon_std_np, variance_weighted_error, anomaly_score
 
 
-def compute_st_vae_anomaly_simple(model, sig_np):
+def compute_st_vae_anomaly_simple(model, sig_np, normalized=False):
     """
     Simplified version that returns just the anomaly score.
     
     Args:
         model: loaded ST-VAE pytorch model
         sig_np: np.ndarray [12, T] - ECG signal
+        normalized: bool - if True, return score normalized to [0, 1] range
     
     Returns:
         anomaly_score: float - NLL + beta*KL anomaly score
+                               Raw range: ~45k-82k, Normalized range: [0, 1]
     """
     _, _, _, score = compute_st_vae_reconstruction_and_anomaly(model, sig_np)
+    
+    if normalized:
+        # Normalize based on empirically observed min/max from full dataset
+        # Normal range: ~46k-78k, Abnormal range: ~29k-82k
+        min_score = 28000.0  # Observed minimum across dataset
+        max_score = 82000.0  # Observed maximum across dataset
+        normalized_score = (score - min_score) / (max_score - min_score)
+        normalized_score = np.clip(normalized_score, 0.0, 1.0)  # Ensure [0, 1]
+        return normalized_score
+    
     return score
 
 
-def compute_st_vae_metrics_breakdown(model, sig_np):
+def compute_st_vae_metrics_breakdown(model, sig_np, normalized=False):
     """
     Get detailed breakdown of ST-VAE anomaly detection metrics.
     
     Args:
         model: loaded ST-VAE pytorch model
         sig_np: np.ndarray [12, T] - ECG signal
+        normalized: bool - if True, return normalized total_score in [0, 1] range
     
     Returns:
         dict with keys:
@@ -148,7 +161,8 @@ def compute_st_vae_metrics_breakdown(model, sig_np):
             - 'weighted_mse': variance-weighted MSE
             - 'kl_divergence': KL divergence of latent space
             - 'nll': negative log-likelihood
-            - 'total_score': NLL + beta*KL (primary metric)
+            - 'total_score': NLL + beta*KL (primary metric, raw or normalized)
+            - 'total_score_raw': always the raw score (only if normalized=True)
             - 'beta': beta value used
     """
     sig = torch.tensor(sig_np, dtype=torch.float32)
@@ -187,7 +201,7 @@ def compute_st_vae_metrics_breakdown(model, sig_np):
         # 5. Total score
         total_score = nll + beta * kl
         
-        return {
+        result = {
             'mse': mse,
             'weighted_mse': weighted_mse,
             'kl_divergence': kl,
@@ -195,6 +209,48 @@ def compute_st_vae_metrics_breakdown(model, sig_np):
             'total_score': total_score,
             'beta': beta
         }
+        
+        # Add normalized score if requested
+        if normalized:
+            min_score = 28000.0
+            max_score = 82000.0
+            normalized_score = (total_score - min_score) / (max_score - min_score)
+            normalized_score = np.clip(normalized_score, 0.0, 1.0)
+            result['total_score_raw'] = total_score
+            result['total_score'] = normalized_score
+        
+        return result
+
+
+def normalize_score(raw_score, min_score=28000.0, max_score=82000.0):
+    """
+    Normalize a raw anomaly score to [0, 1] range for presentation.
+    
+    Args:
+        raw_score: float - raw anomaly score (typically 28k-82k range)
+        min_score: float - minimum observed score in dataset
+        max_score: float - maximum observed score in dataset
+    
+    Returns:
+        float - normalized score in [0, 1] range
+    """
+    normalized = (raw_score - min_score) / (max_score - min_score)
+    return np.clip(normalized, 0.0, 1.0)
+
+
+def denormalize_score(normalized_score, min_score=28000.0, max_score=82000.0):
+    """
+    Convert normalized score back to raw score.
+    
+    Args:
+        normalized_score: float - normalized score in [0, 1] range
+        min_score: float - minimum observed score in dataset
+        max_score: float - maximum observed score in dataset
+    
+    Returns:
+        float - raw anomaly score
+    """
+    return normalized_score * (max_score - min_score) + min_score
 
 
 # Example usage:
@@ -218,18 +274,33 @@ if __name__ == "__main__":
     recon_mean, recon_std, anomaly_map, score = compute_st_vae_reconstruction_and_anomaly(model, sig_np)
     print(f"   Reconstruction shape: {recon_mean.shape}")
     print(f"   Anomaly map shape: {anomaly_map.shape}")
-    print(f"   Anomaly score: {score:.4f}")
+    print(f"   Anomaly score (raw): {score:.2f}")
+    print(f"   Anomaly score (normalized): {normalize_score(score):.4f}")
     
-    # 2. Simple score
+    # 2. Simple score - both versions
     print("\n2. Simple Anomaly Score:")
-    simple_score = compute_st_vae_anomaly_simple(model, sig_np)
-    print(f"   Score: {simple_score:.4f}")
+    simple_score_raw = compute_st_vae_anomaly_simple(model, sig_np, normalized=False)
+    simple_score_norm = compute_st_vae_anomaly_simple(model, sig_np, normalized=True)
+    print(f"   Score (raw): {simple_score_raw:.2f}")
+    print(f"   Score (normalized): {simple_score_norm:.4f}")
     
-    # 3. Detailed metrics
-    print("\n3. Detailed Metrics Breakdown:")
-    metrics = compute_st_vae_metrics_breakdown(model, sig_np)
-    for key, value in metrics.items():
-        print(f"   {key}: {value:.4f}")
+    # 3. Detailed metrics - raw
+    print("\n3. Detailed Metrics Breakdown (raw):")
+    metrics_raw = compute_st_vae_metrics_breakdown(model, sig_np, normalized=False)
+    for key, value in metrics_raw.items():
+        if key == 'beta':
+            print(f"   {key}: {value}")
+        else:
+            print(f"   {key}: {value:.4f}")
+    
+    # 4. Detailed metrics - normalized
+    print("\n4. Detailed Metrics Breakdown (normalized total_score):")
+    metrics_norm = compute_st_vae_metrics_breakdown(model, sig_np, normalized=True)
+    for key, value in metrics_norm.items():
+        if key == 'beta':
+            print(f"   {key}: {value}")
+        else:
+            print(f"   {key}: {value:.4f}")
     
     print("\n" + "="*70)
     print("All functions working correctly!")
