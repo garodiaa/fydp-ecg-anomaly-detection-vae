@@ -1,0 +1,1 @@
+Tested the basic functionality of loading ECG data and training a CNN model on the PTB-XL dataset. The code is structured to handle the waveform data correctly, ensuring that the model can process the ECG signals as intended.
