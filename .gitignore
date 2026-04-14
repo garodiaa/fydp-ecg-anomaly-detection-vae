@@ -3,3 +3,13 @@ ptbxl
 src/weights
 outputs
 extra_md
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+
+# Notebook/runtime artifacts
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
