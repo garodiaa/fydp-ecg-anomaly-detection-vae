@@ -255,8 +255,13 @@ def denormalize_score(normalized_score, min_score=28000.0, max_score=82000.0):
 
 # Example usage:
 if __name__ == "__main__":
+    from pathlib import Path
     import sys
-    sys.path.insert(0, 'src')
+    project_root = Path(__file__).resolve().parents[2]
+    src_dir = project_root / 'src'
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+
     from generate_reconstructions import load_model, get_sample_ecg
     
     # Load ST-VAE model

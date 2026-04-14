@@ -5,16 +5,19 @@ Verifies the function works correctly and can discriminate between normal/abnorm
 
 import torch
 import numpy as np
-import os
 from pathlib import Path
 
 # Import the model loading function
 import sys
-sys.path.append(str(Path(__file__).parent / 'src'))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = PROJECT_ROOT / 'src'
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
 from generate_reconstructions import load_model
 
 # Import our ST-VAE anomaly computation function
-from compute_st_vae_anomaly import compute_st_vae_anomaly_simple, compute_st_vae_metrics_breakdown
+from anomaly.compute_st_vae_anomaly import compute_st_vae_anomaly_simple, compute_st_vae_metrics_breakdown
 
 def test_st_vae_batch():
     """Test ST-VAE on batch of normal and abnormal samples"""
@@ -32,8 +35,8 @@ def test_st_vae_batch():
     print("=" * 80)
     
     # Data paths
-    normal_dir = Path("data/demo_samples/normal")
-    abnormal_dir = Path("data/demo_samples/abnormal")
+    normal_dir = PROJECT_ROOT / "data/demo_samples/normal"
+    abnormal_dir = PROJECT_ROOT / "data/demo_samples/abnormal"
     
     # Get sample files
     normal_files = sorted(list(normal_dir.glob("*.npy")))[:50]
