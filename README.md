@@ -8,7 +8,7 @@
 ![Models](https://img.shields.io/badge/Models-6%20VAE%20Variants-6D4C41?style=flat)
 ![License](https://img.shields.io/badge/License-Academic-4CAF50?style=flat)
 
-Final year project focused on deep-learning based ECG anomaly detection using multiple Variational Autoencoder (VAE) families. This repository contains the full experimentation pipeline, model implementations, evaluation suite, and thesis-grade documentation.
+Final year defense project focused on deep-learning based ECG anomaly detection using multiple Variational Autoencoder (VAE) families. This repository contains the full experimentation pipeline, model implementations, evaluation suite, and thesis-grade documentation.
 
 ## Project Highlights
 
