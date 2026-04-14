@@ -21,7 +21,7 @@ def check_normalization(signal):
         print("\nNormalization type unclear or signal not normalized.")
 
 if __name__ == "__main__":
-    path = "/Users/marcgarreta/Documents/GitHub/12-lead-ECG-AD/data/inference_data/cpsc/processed_cpsc/A0002.npy"
+    path = "/Users//12-lead-ECG-AD/data/inference_data/cpsc/processed_cpsc/A0002.npy"
     signal = np.load(path)
 
     print(f"Signal shape: {signal.shape}")
